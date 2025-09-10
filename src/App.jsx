@@ -755,11 +755,16 @@ Type "RESET ALL" below to confirm:`;
                   </button>
                   <button 
                     onClick={resetAllData}
-                    className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors bg-red-600 text-white hover:bg-red-700 border-2 border-red-400"
-                    title="⚠️ DANGER: Permanently delete ALL data including players and statistics"
+                    className="px-4 py-2 rounded-lg font-medium flex flex-col items-center gap-1 transition-colors bg-red-600 text-white hover:bg-red-700 border-2 border-red-400"
+                    title="⚠️ DANGER: Permanently delete ALL data including players and statistics. You will need to type 'RESET ALL' to confirm."
                   >
-                    <AlertCircle className="h-4 w-4" />
-                    Reset ALL
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4" />
+                      Reset ALL
+                    </div>
+                    <div className="text-xs opacity-90 font-normal">
+                      Type "RESET ALL"
+                    </div>
                   </button>
                 </div>
               </div>
