@@ -2,14 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Target, BarChart3, Settings, Play, Pause, Plus, Minus, DollarSign, Home, Car, Dice1, Crown, Medal, Award, Clock, Save, Edit3, MapPin, Building, ShoppingCart, Gavel, AlertCircle, CheckCircle, Download, FileText, Database, Code, RotateCcw } from 'lucide-react';
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('game-tracker');
-  const [isGameActive, setIsGameActive] = useState(false);
+  // Local Storage Functions
+  const saveToLocalStorage = (key, data) => {
+    try {
+      localStorage.setItem(`monopoly_${key}`, JSON.stringify(data));
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  };
+
+  const loadFromLocalStorage = (key, defaultValue) => {
+    try {
+      const saved = localStorage.getItem(`monopoly_${key}`);
+      return saved ? JSON.parse(saved) : defaultValue;
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+      return defaultValue;
+    }
+  };
+
+  // Initialize state with localStorage data
+  const [activeTab, setActiveTab] = useState(loadFromLocalStorage('activeTab', 'game-tracker'));
+  const [isGameActive, setIsGameActive] = useState(loadFromLocalStorage('isGameActive', false));
   
-  const [tournaments, setTournaments] = useState([]);
+  const [tournaments, setTournaments] = useState(loadFromLocalStorage('tournaments', []));
 
-  const [players, setPlayers] = useState([]);
+  const [players, setPlayers] = useState(loadFromLocalStorage('players', []));
 
-  const [currentGame, setCurrentGame] = useState({
+  const [currentGame, setCurrentGame] = useState(loadFromLocalStorage('currentGame', {
     id: null,
     players: [],
     currentTurn: 0,
@@ -20,9 +41,9 @@ const App = () => {
     housesRemaining: 32,
     hotelsRemaining: 12,
     startTime: null
-  });
+  }));
 
-  const [gameEvents, setGameEvents] = useState([]);
+  const [gameEvents, setGameEvents] = useState(loadFromLocalStorage('gameEvents', []));
 
   const [newEvent, setNewEvent] = useState({ player: '', event: '', type: 'other' });
   const [selectedPlayer, setSelectedPlayer] = useState('');
@@ -30,6 +51,7 @@ const App = () => {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerToken, setNewPlayerToken] = useState('Car');
+  const [lastSaved, setLastSaved] = useState(new Date());
   
   const monopolyBoard = [
     "Go", "Mediterranean Ave", "Community Chest", "Baltic Ave", "Income Tax", "Reading Railroad",
@@ -293,6 +315,7 @@ This will permanently delete ALL data including:
 • Current game data and events
 • All game history and progress
 • All settings and preferences
+• All saved data in browser storage
 
 This action cannot be undone!
 
@@ -301,7 +324,24 @@ Type "RESET ALL" below to confirm:`;
     const userInput = window.prompt(confirmMessage);
     
     if (userInput === "RESET ALL") {
+      // Clear localStorage first
+      try {
+        const keysToRemove = [
+          'monopoly_activeTab',
+          'monopoly_isGameActive', 
+          'monopoly_tournaments',
+          'monopoly_players',
+          'monopoly_currentGame',
+          'monopoly_gameEvents'
+        ];
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+      } catch (error) {
+        console.error('Error clearing localStorage:', error);
+      }
+
       // Reset all state to initial values
+      setActiveTab('game-tracker');
+      setIsGameActive(false);
       setPlayers([]);
       setTournaments([]);
       setCurrentGame({
@@ -323,23 +363,10 @@ Type "RESET ALL" below to confirm:`;
       setNewPlayerName('');
       setNewPlayerToken('Car');
       setNewEvent({ player: '', event: '', type: 'other' });
-      setIsGameActive(false);
-      
-      // Add final reset confirmation event
-      const now = new Date();
-      const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-      setGameEvents([{
-        id: Date.now(),
-        time: timeStr,
-        player: 'System',
-        event: '🔥 COMPLETE SYSTEM RESET - All data permanently deleted',
-        type: 'other',
-        timestamp: now.toISOString()
-      }]);
 
       // Show success message
       setTimeout(() => {
-        alert('✅ Complete reset successful! All data has been permanently deleted and the system has been restored to default settings.');
+        alert('✅ Complete reset successful! All data has been permanently deleted and the system has been restored to default settings. Data will no longer persist after page refresh until you add new data.');
       }, 100);
     } else if (userInput !== null) {
       alert('❌ Reset cancelled. You must type "RESET ALL" exactly to confirm the complete reset.');
@@ -496,7 +523,7 @@ Type "RESET ALL" below to confirm:`;
 
   const exportToHTML = (filename) => {
     try {
-    let htmlContent = `
+      let htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -648,6 +675,32 @@ Type "RESET ALL" below to confirm:`;
     }
   };
 
+  // Auto-save to localStorage whenever data changes
+  useEffect(() => {
+    saveToLocalStorage('activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    saveToLocalStorage('isGameActive', isGameActive);
+  }, [isGameActive]);
+
+  useEffect(() => {
+    saveToLocalStorage('tournaments', tournaments);
+  }, [tournaments]);
+
+  useEffect(() => {
+    saveToLocalStorage('players', players);
+  }, [players]);
+
+  useEffect(() => {
+    saveToLocalStorage('currentGame', currentGame);
+  }, [currentGame]);
+
+  useEffect(() => {
+    saveToLocalStorage('gameEvents', gameEvents);
+  }, [gameEvents]);
+
+  // Game timer
   useEffect(() => {
     const timer = setInterval(() => {
       if (currentGame.status === 'active') {
@@ -1664,11 +1717,19 @@ Type "RESET ALL" below to confirm:`;
               </div>
             </div>
             <div className="text-right">
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`w-2 h-2 rounded-full ${currentGame.status === 'active' ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
-                <span className={`text-sm font-medium ${currentGame.status === 'active' ? 'text-green-400' : 'text-gray-400'}`}>
-                  {currentGame.status === 'active' ? 'TRACKING LIVE' : 'READY'}
-                </span>
+              <div className="flex items-center gap-4 mb-1">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${currentGame.status === 'active' ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
+                  <span className={`text-sm font-medium ${currentGame.status === 'active' ? 'text-green-400' : 'text-gray-400'}`}>
+                    {currentGame.status === 'active' ? 'TRACKING LIVE' : 'READY'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Save className="h-3 w-3 text-blue-400" />
+                  <span className="text-xs text-blue-400">
+                    Auto-saved {lastSaved.toLocaleTimeString()}
+                  </span>
+                </div>
               </div>
               <p className="text-gray-400 text-sm">September 2025 Tournament</p>
               <p className="font-semibold text-white">{players.length} Players • {gameEvents.length} Events</p>
