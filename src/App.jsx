@@ -380,63 +380,122 @@ Type "RESET ALL" below to confirm:`;
 
   // Export Functions
   const exportToCSV = (data, filename) => {
-    let csvContent = '';
-    
-    if (filename === 'players') {
-      csvContent = 'Name,Email,Wins,Total Games,Win Rate,Avg Game Time,Preferred Token,Total Winnings,Rank\n';
-      players.forEach(player => {
-        csvContent += `${player.name},${player.email},${player.wins},${player.totalGames},${player.winRate}%,${player.avgGameTime}m,${player.preferredToken},${player.totalWinnings},${player.rank}\n`;
-      });
-    } else if (filename === 'game-events') {
-      csvContent = 'Time,Player,Event,Type,Timestamp\n';
-      gameEvents.forEach(event => {
-        csvContent += `${event.time},"${event.player}","${event.event}",${event.type},${event.timestamp}\n`;
-      });
-    } else if (filename === 'current-game') {
-      csvContent = 'Player,Money,Net Worth,Position,Properties Count,In Jail,Passes GO,Rent Paid,Rent Received\n';
-      currentGame.players.forEach(player => {
-        csvContent += `${player.name},${player.money},${player.netWorth},${player.position},${player.properties.length},${player.inJail},${player.passedGo},${player.rentPaid},${player.rentReceived}\n`;
-      });
+    try {
+      let csvContent = '';
+      
+      if (filename === 'players') {
+        csvContent = 'Name,Email,Wins,Total Games,Win Rate,Avg Game Time,Preferred Token,Total Winnings,Rank\n';
+        if (players.length === 0) {
+          csvContent += 'No players data available\n';
+        } else {
+          players.forEach(player => {
+            csvContent += `"${player.name}","${player.email || 'No email'}",${player.wins},${player.totalGames},${player.winRate}%,${player.avgGameTime}m,"${player.preferredToken}",${player.totalWinnings},${player.rank}\n`;
+          });
+        }
+      } else if (filename === 'game-events') {
+        csvContent = 'Time,Player,Event,Type,Timestamp\n';
+        if (gameEvents.length === 0) {
+          csvContent += 'No game events available\n';
+        } else {
+          gameEvents.forEach(event => {
+            csvContent += `"${event.time}","${event.player}","${event.event}","${event.type}","${event.timestamp}"\n`;
+          });
+        }
+      } else if (filename === 'current-game') {
+        csvContent = 'Player,Money,Net Worth,Position,Properties Count,In Jail,Passes GO,Rent Paid,Rent Received\n';
+        if (currentGame.players.length === 0) {
+          csvContent += 'No current game data available\n';
+        } else {
+          currentGame.players.forEach(player => {
+            csvContent += `"${player.name}",${player.money},${player.netWorth},"${player.position}",${player.properties.length},${player.inJail},${player.passedGo},${player.rentPaid || 0},${player.rentReceived || 0}\n`;
+          });
+        }
+      }
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${filename}-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      // Show success message
+      setTimeout(() => {
+        alert(`✅ CSV export successful! File "${filename}-${new Date().toISOString().split('T')[0]}.csv" has been downloaded.`);
+      }, 100);
+    } catch (error) {
+      console.error('CSV Export Error:', error);
+      alert(`❌ CSV export failed: ${error.message}`);
     }
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const exportToJSON = (data, filename) => {
-    let jsonData;
-    
-    if (filename === 'full-tournament') {
-      jsonData = {
-        tournaments,
-        players,
-        currentGame,
-        gameEvents,
-        exportDate: new Date().toISOString()
-      };
-    } else if (filename === 'players') {
-      jsonData = { players, exportDate: new Date().toISOString() };
-    } else if (filename === 'current-game') {
-      jsonData = { currentGame, gameEvents, exportDate: new Date().toISOString() };
+    try {
+      let jsonData;
+      
+      if (filename === 'full-tournament') {
+        jsonData = {
+          tournaments,
+          players,
+          currentGame,
+          gameEvents,
+          exportDate: new Date().toISOString(),
+          metadata: {
+            totalPlayers: players.length,
+            totalGames: players.reduce((acc, p) => acc + p.totalGames, 0),
+            totalEvents: gameEvents.length,
+            currentGameStatus: currentGame.status
+          }
+        };
+      } else if (filename === 'players') {
+        jsonData = { 
+          players, 
+          exportDate: new Date().toISOString(),
+          metadata: {
+            totalPlayers: players.length,
+            totalGames: players.reduce((acc, p) => acc + p.totalGames, 0)
+          }
+        };
+      } else if (filename === 'current-game') {
+        jsonData = { 
+          currentGame, 
+          gameEvents, 
+          exportDate: new Date().toISOString(),
+          metadata: {
+            playersInGame: currentGame.players.length,
+            gameStatus: currentGame.status,
+            totalEvents: gameEvents.length
+          }
+        };
+      }
+      
+      const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${filename}-${new Date().toISOString().split('T')[0]}.json`);
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      // Show success message
+      setTimeout(() => {
+        alert(`✅ JSON export successful! File "${filename}-${new Date().toISOString().split('T')[0]}.json" has been downloaded.`);
+      }, 100);
+    } catch (error) {
+      console.error('JSON Export Error:', error);
+      alert(`❌ JSON export failed: ${error.message}`);
     }
-    
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const exportToHTML = (filename) => {
+    try {
     let htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -572,10 +631,21 @@ Type "RESET ALL" below to confirm:`;
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `tournament-report.html`);
+    link.setAttribute('download', `tournament-report-${new Date().toISOString().split('T')[0]}.html`);
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    // Show success message
+    setTimeout(() => {
+      alert(`✅ HTML export successful! File "tournament-report-${new Date().toISOString().split('T')[0]}.html" has been downloaded.`);
+    }, 100);
+    } catch (error) {
+      console.error('HTML Export Error:', error);
+      alert(`❌ HTML export failed: ${error.message}`);
+    }
   };
 
   useEffect(() => {
