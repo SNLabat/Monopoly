@@ -251,7 +251,7 @@ const App = () => {
   };
 
   const resetGame = () => {
-    if (window.confirm('Are you sure you want to reset the entire game? This will clear all game data and cannot be undone.')) {
+    if (window.confirm('Are you sure you want to reset the current game? This will clear the current game data but keep tournament players.')) {
       setCurrentGame({
         id: null,
         players: [],
@@ -278,10 +278,71 @@ const App = () => {
         id: Date.now(),
         time: timeStr,
         player: 'System',
-        event: 'Game completely reset - all data cleared',
+        event: 'Current game reset - game data cleared',
         type: 'other',
         timestamp: now.toISOString()
       }]);
+    }
+  };
+
+  const resetAllData = () => {
+    const confirmMessage = `⚠️ COMPLETE RESET WARNING ⚠️
+
+This will permanently delete ALL data including:
+• All tournament players and their statistics
+• Current game data and events
+• All game history and progress
+• All settings and preferences
+
+This action cannot be undone!
+
+Type "RESET ALL" below to confirm:`;
+
+    const userInput = window.prompt(confirmMessage);
+    
+    if (userInput === "RESET ALL") {
+      // Reset all state to initial values
+      setPlayers([]);
+      setTournaments([]);
+      setCurrentGame({
+        id: null,
+        players: [],
+        currentTurn: 0,
+        gameTime: 0,
+        status: "setup",
+        round: 0,
+        bankMoney: 15140,
+        housesRemaining: 32,
+        hotelsRemaining: 12,
+        startTime: null
+      });
+      setGameEvents([]);
+      setSelectedPlayer('');
+      setTransactionAmount('');
+      setSelectedProperty('');
+      setNewPlayerName('');
+      setNewPlayerToken('Car');
+      setNewEvent({ player: '', event: '', type: 'other' });
+      setIsGameActive(false);
+      
+      // Add final reset confirmation event
+      const now = new Date();
+      const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+      setGameEvents([{
+        id: Date.now(),
+        time: timeStr,
+        player: 'System',
+        event: '🔥 COMPLETE SYSTEM RESET - All data permanently deleted',
+        type: 'other',
+        timestamp: now.toISOString()
+      }]);
+
+      // Show success message
+      setTimeout(() => {
+        alert('✅ Complete reset successful! All data has been permanently deleted and the system has been restored to default settings.');
+      }, 100);
+    } else if (userInput !== null) {
+      alert('❌ Reset cancelled. You must type "RESET ALL" exactly to confirm the complete reset.');
     }
   };
 
@@ -683,14 +744,24 @@ const App = () => {
                   {currentGame.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   {currentGame.status === 'active' ? 'Pause' : 'Resume'}
                 </button>
-                <button 
-                  onClick={resetGame}
-                  className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors bg-red-600 text-white hover:bg-red-700"
-                  title="Reset entire game - clears all data"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reset Game
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={resetGame}
+                    className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors bg-orange-600 text-white hover:bg-orange-700"
+                    title="Reset current game only - keeps tournament players"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Reset Game
+                  </button>
+                  <button 
+                    onClick={resetAllData}
+                    className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors bg-red-600 text-white hover:bg-red-700 border-2 border-red-400"
+                    title="⚠️ DANGER: Permanently delete ALL data including players and statistics"
+                  >
+                    <AlertCircle className="h-4 w-4" />
+                    Reset ALL
+                  </button>
+                </div>
               </div>
             </div>
           </div>
