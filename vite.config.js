@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/Monopoly/', // Replace with your actual repository name
+  base: '/', // Root path for Vercel deployment
   build: {
     outDir: 'dist',
   },
