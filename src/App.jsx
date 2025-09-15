@@ -82,12 +82,17 @@ const App = () => {
       id: Date.now(),
       name: newPlayerName.trim(),
       email: '',
-      wins: 0,
       totalGames: 0,
-      winRate: 0,
+      placements: [], // Array of placement objects: {gameId, placement, date, finalWorth}
+      avgPlacement: 0,
+      firstPlaces: 0,
+      topThreePlacements: 0,
       avgGameTime: 0,
       preferredToken: newPlayerToken,
       totalWinnings: 0,
+      bestGame: { worth: 0, date: null },
+      worstGame: { worth: Infinity, date: null },
+      consistencyScore: 0, // Lower is more consistent
       rank: players.length + 1
     };
     
@@ -144,33 +149,61 @@ const App = () => {
     setIsGameActive(true);
   };
 
-  const endGame = (winnerId) => {
-    const winner = currentGame.players.find(p => p.id === winnerId);
-    if (!winner) return;
+  const endGame = (placements) => {
+    // placements should be an array of {playerId, placement, finalWorth}
+    if (!placements || placements.length === 0) return;
 
     setCurrentGame(prev => ({ ...prev, status: 'completed' }));
     
-    // Update player stats
+    const gameDate = new Date().toISOString();
+    const gameId = currentGame.id || Date.now();
+    
+    // Update player stats with placement data
     setPlayers(prevPlayers => 
       prevPlayers.map(player => {
-        const gamePlayer = currentGame.players.find(gp => gp.id === player.id);
-        if (!gamePlayer) return player;
+        const placementData = placements.find(p => p.playerId === player.id);
+        if (!placementData) return player;
         
         const newTotalGames = player.totalGames + 1;
-        const newWins = player.wins + (player.id === winnerId ? 1 : 0);
-        const newWinRate = Math.round((newWins / newTotalGames) * 100);
+        const newPlacements = [...player.placements, {
+          gameId,
+          placement: placementData.placement,
+          date: gameDate,
+          finalWorth: placementData.finalWorth
+        }];
+        
+        // Calculate new stats
+        const avgPlacement = newPlacements.reduce((sum, p) => sum + p.placement, 0) / newPlacements.length;
+        const firstPlaces = newPlacements.filter(p => p.placement === 1).length;
+        const topThreePlacements = newPlacements.filter(p => p.placement <= 3).length;
+        
+        // Update best/worst games
+        const bestGame = placementData.finalWorth > player.bestGame.worth ? 
+          { worth: placementData.finalWorth, date: gameDate } : player.bestGame;
+        const worstGame = placementData.finalWorth < player.worstGame.worth ? 
+          { worth: placementData.finalWorth, date: gameDate } : player.worstGame;
+        
+        // Calculate consistency score (standard deviation of placements)
+        const placementVariance = newPlacements.reduce((sum, p) => sum + Math.pow(p.placement - avgPlacement, 2), 0) / newPlacements.length;
+        const consistencyScore = Math.sqrt(placementVariance);
         
         return {
           ...player,
           totalGames: newTotalGames,
-          wins: newWins,
-          winRate: newWinRate,
-          totalWinnings: player.totalWinnings + (player.id === winnerId ? gamePlayer.netWorth : 0)
+          placements: newPlacements,
+          avgPlacement: Math.round(avgPlacement * 100) / 100,
+          firstPlaces,
+          topThreePlacements,
+          bestGame,
+          worstGame: worstGame.worth === Infinity ? { worth: 0, date: null } : worstGame,
+          consistencyScore: Math.round(consistencyScore * 100) / 100,
+          totalWinnings: player.totalWinnings + (placementData.placement === 1 ? placementData.finalWorth : 0)
         };
       })
     );
     
-    addGameEvent(`${winner.name} wins the game!`, winnerId, 'other');
+    const winner = currentGame.players.find(p => p.id === placements.find(pl => pl.placement === 1)?.playerId);
+    addGameEvent(`Game completed! ${winner?.name || 'Unknown'} takes 1st place!`, winner?.id, 'other');
     setIsGameActive(false);
   };
 
@@ -999,7 +1032,22 @@ Type "RESET ALL" below to confirm:`;
                     </>
                   )}
                   <button
-                    onClick={() => endGame(player.id)}
+                    onClick={() => {
+                      // Create placement modal/interface
+                      const placements = currentGame.players.map((p, idx) => {
+                        const placement = p.id === player.id ? 1 : idx + 2;
+                        return {
+                          playerId: p.id,
+                          placement: placement,
+                          finalWorth: p.netWorth
+                        };
+                      });
+                      
+                      // For now, simple placement assignment - winner gets 1st, others get sequential
+                      if (window.confirm(`Declare ${player.name} as the winner? This will end the game and record final placements.`)) {
+                        endGame(placements);
+                      }
+                    }}
                     className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-xs font-medium"
                   >
                     Declare Winner
@@ -1334,9 +1382,9 @@ Type "RESET ALL" below to confirm:`;
                     </td>
                     <td className="py-4 px-4">
                       <div className="space-y-1">
-                        <p className="text-sm text-gray-300"><span className="font-medium text-green-400">{player.wins}</span> wins</p>
+                        <p className="text-sm text-gray-300"><span className="font-medium text-yellow-400">{player.firstPlaces}</span> victories</p>
                         <p className="text-sm text-gray-300"><span className="font-medium text-blue-400">{player.totalGames}</span> games</p>
-                        <p className="text-sm text-gray-300"><span className="font-medium text-purple-400">{player.winRate}%</span> win rate</p>
+                        <p className="text-sm text-gray-300">Avg: <span className="font-medium text-green-400">{player.avgPlacement.toFixed(2)}</span></p>
                       </div>
                     </td>
                     <td className="py-4 px-4">
@@ -1437,7 +1485,12 @@ Type "RESET ALL" below to confirm:`;
             </div>
           ) : (
             <div className="space-y-3">
-              {players.sort((a, b) => b.wins - a.wins).slice(0, 5).map((player, index) => (
+              {players.sort((a, b) => {
+                if (a.totalGames === 0 && b.totalGames === 0) return 0;
+                if (a.totalGames === 0) return 1;
+                if (b.totalGames === 0) return -1;
+                return a.avgPlacement - b.avgPlacement;
+              }).slice(0, 5).map((player, index) => (
                 <div key={player.id} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
@@ -1447,7 +1500,7 @@ Type "RESET ALL" below to confirm:`;
                     </div>
                     <div>
                       <p className="font-medium text-white">{player.name}</p>
-                      <p className="text-sm text-gray-400">{player.wins} wins • {player.winRate}% win rate</p>
+                      <p className="text-sm text-gray-400">{player.firstPlaces} victories • Avg: {player.avgPlacement.toFixed(2)}</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -1605,6 +1658,240 @@ Type "RESET ALL" below to confirm:`;
     </div>
   );
 
+  const renderRecordBook = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+          <Award className="h-6 w-6 text-yellow-400" />
+          Tournament Record Book
+        </h3>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => exportToJSON(players, 'record-book')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export Records
+          </button>
+        </div>
+      </div>
+
+      {players.length === 0 ? (
+        <div className="bg-gray-800 rounded-xl shadow-lg p-12 border border-gray-700 text-center">
+          <Award className="h-16 w-16 text-gray-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">No Records Yet</h3>
+          <p className="text-gray-400">Add players and complete games to build your record book</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Hall of Fame */}
+          <div className="bg-gradient-to-r from-yellow-600 to-yellow-800 rounded-xl shadow-lg p-6 border border-yellow-500">
+            <h4 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Crown className="h-6 w-6" />
+              Hall of Fame
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Most First Places */}
+              <div className="bg-yellow-900 bg-opacity-50 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-yellow-100 mb-1">
+                  {Math.max(...players.map(p => p.firstPlaces), 0)}
+                </div>
+                <div className="text-yellow-200 text-sm mb-2">Most Victories</div>
+                <div className="text-yellow-100 font-medium">
+                  {players.find(p => p.firstPlaces === Math.max(...players.map(pl => pl.firstPlaces), 0))?.name || 'N/A'}
+                </div>
+              </div>
+
+              {/* Best Average Placement */}
+              <div className="bg-yellow-900 bg-opacity-50 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-yellow-100 mb-1">
+                  {Math.min(...players.filter(p => p.totalGames > 0).map(p => p.avgPlacement), 999).toFixed(2)}
+                </div>
+                <div className="text-yellow-200 text-sm mb-2">Best Avg Placement</div>
+                <div className="text-yellow-100 font-medium">
+                  {players.find(p => p.avgPlacement === Math.min(...players.filter(pl => pl.totalGames > 0).map(pl => pl.avgPlacement), 999))?.name || 'N/A'}
+                </div>
+              </div>
+
+              {/* Highest Single Game Worth */}
+              <div className="bg-yellow-900 bg-opacity-50 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-yellow-100 mb-1">
+                  ${Math.max(...players.map(p => p.bestGame.worth), 0).toLocaleString()}
+                </div>
+                <div className="text-yellow-200 text-sm mb-2">Highest Game Worth</div>
+                <div className="text-yellow-100 font-medium">
+                  {players.find(p => p.bestGame.worth === Math.max(...players.map(pl => pl.bestGame.worth), 0))?.name || 'N/A'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Player Records */}
+          <div className="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
+            <div className="bg-gray-900 px-6 py-4 border-b border-gray-700">
+              <h4 className="text-lg font-semibold text-white">Player Records</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-900 border-b border-gray-700">
+                  <tr>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Rank</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Player</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Games</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Avg Place</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">1st Places</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Top 3</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Top 3 Rate</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Consistency</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-300">Best Game</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {players
+                    .filter(player => player.totalGames > 0)
+                    .sort((a, b) => a.avgPlacement - b.avgPlacement)
+                    .map((player, index) => (
+                    <tr key={player.id} className="hover:bg-gray-700 transition-colors">
+                      <td className="py-4 px-4">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                          index === 0 ? 'bg-yellow-500' : 
+                          index === 1 ? 'bg-gray-400' : 
+                          index === 2 ? 'bg-orange-500' : 
+                          'bg-blue-500'
+                        }`}>
+                          {index + 1}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                            {player.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div>
+                            <p className="font-medium text-white">{player.name}</p>
+                            <p className="text-xs text-gray-400">Token: {player.preferredToken}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-medium text-white">{player.totalGames}</span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={`font-bold ${
+                          player.avgPlacement <= 2 ? 'text-green-400' :
+                          player.avgPlacement <= 3 ? 'text-yellow-400' :
+                          player.avgPlacement <= 4 ? 'text-orange-400' : 'text-red-400'
+                        }`}>
+                          {player.avgPlacement.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-yellow-400">{player.firstPlaces}</span>
+                          {player.firstPlaces > 0 && <Crown className="h-4 w-4 text-yellow-400" />}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-medium text-green-400">{player.topThreePlacements}</span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-medium text-blue-400">
+                          {player.totalGames > 0 ? Math.round((player.topThreePlacements / player.totalGames) * 100) : 0}%
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-medium ${
+                            player.consistencyScore <= 1 ? 'text-green-400' :
+                            player.consistencyScore <= 1.5 ? 'text-yellow-400' : 'text-red-400'
+                          }`}>
+                            {player.consistencyScore.toFixed(2)}
+                          </span>
+                          <div className="text-xs text-gray-400">
+                            {player.consistencyScore <= 1 ? 'Very Consistent' :
+                             player.consistencyScore <= 1.5 ? 'Consistent' : 'Variable'}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div>
+                          <span className="font-bold text-green-400">
+                            ${player.bestGame.worth.toLocaleString()}
+                          </span>
+                          {player.bestGame.date && (
+                            <div className="text-xs text-gray-400">
+                              {new Date(player.bestGame.date).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Recent Games History */}
+          <div className="bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-700">
+            <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-400" />
+              Recent Tournament History
+            </h4>
+            {players.some(p => p.placements.length > 0) ? (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {players
+                  .flatMap(player => 
+                    player.placements.map(placement => ({
+                      ...placement,
+                      playerName: player.name,
+                      playerId: player.id
+                    }))
+                  )
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .slice(0, 10)
+                  .map((game, index) => (
+                    <div key={`${game.gameId}-${game.playerId}`} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                          game.placement === 1 ? 'bg-yellow-500' :
+                          game.placement === 2 ? 'bg-gray-400' :
+                          game.placement === 3 ? 'bg-orange-500' : 'bg-blue-500'
+                        }`}>
+                          {game.placement}
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">{game.playerName}</p>
+                          <p className="text-sm text-gray-400">
+                            {new Date(game.date).toLocaleDateString()} • ${game.finalWorth.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-sm font-medium ${
+                          game.placement === 1 ? 'text-yellow-400' :
+                          game.placement <= 3 ? 'text-green-400' : 'text-gray-400'
+                        }`}>
+                          {game.placement === 1 ? '🏆 Champion' :
+                           game.placement <= 3 ? '🥉 Top 3' : `${game.placement}th Place`}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div className="text-center p-8 text-gray-400">
+                <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No completed games yet</p>
+                <p className="text-sm">Complete some games to see tournament history</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const renderStatistics = () => (
     <div className="space-y-6">
       <h3 className="text-xl font-semibold text-white">Tournament Statistics & Analytics</h3>
@@ -1627,6 +1914,10 @@ Type "RESET ALL" below to confirm:`;
               <div className="flex justify-between">
                 <span className="text-gray-400">Total Games:</span>
                 <span className="font-medium text-green-400">{players.reduce((acc, p) => acc + p.totalGames, 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Total Victories:</span>
+                <span className="font-medium text-yellow-400">{players.reduce((acc, p) => acc + p.firstPlaces, 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Active Game:</span>
@@ -1744,6 +2035,7 @@ Type "RESET ALL" below to confirm:`;
               { id: 'game-tracker', label: 'Game Tracker', icon: Play },
               { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
               { id: 'players', label: 'Players', icon: Users },
+              { id: 'record-book', label: 'Record Book', icon: Award },
               { id: 'statistics', label: 'Statistics', icon: Trophy }
             ].map((tab) => (
               <button
@@ -1767,6 +2059,7 @@ Type "RESET ALL" below to confirm:`;
           {activeTab === 'game-tracker' && renderGameTracker()}
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'players' && renderPlayers()}
+          {activeTab === 'record-book' && renderRecordBook()}
           {activeTab === 'statistics' && renderStatistics()}
         </div>
       </div>
